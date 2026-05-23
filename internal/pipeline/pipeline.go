@@ -199,7 +199,7 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 		Foreach(ariaSegs, "segment").
 		Engine(vamp.AudioEngineKokoro).
 		Voice("af_bella").
-		TextTemplate("{{.segment.text}}").
+		TextTemplate(`{{ ttsNormalize .segment.text "" }}`).
 		Output("audio/{{.segment.id}}.wav")
 
 	atlasAudio := p.Audio("cast_atlas").
@@ -208,7 +208,7 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 		Foreach(atlasSegs, "segment").
 		Engine(vamp.AudioEngineKokoro).
 		Voice("am_adam").
-		TextTemplate("{{.segment.text}}").
+		TextTemplate(`{{ ttsNormalize .segment.text "" }}`).
 		Output("audio/{{.segment.id}}.wav")
 
 	disclaimerAudio := p.Audio("cast_disclaimer").
@@ -217,7 +217,7 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 		Foreach(disclaimerSegs, "segment").
 		Engine(vamp.AudioEngineKokoro).
 		Voice("am_eric").
-		TextTemplate("{{.segment.text}}").
+		TextTemplate(`{{ ttsNormalize .segment.text "" }}`).
 		Output("audio/{{.segment.id}}.wav")
 
 	// ---- Compose mix script: list voice_segments in master order
