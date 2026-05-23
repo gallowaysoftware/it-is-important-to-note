@@ -12,6 +12,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -67,6 +68,15 @@ func nextCommand() *cobra.Command {
 				}
 			}
 			topic := explicitTopic
+			if topic == "" {
+				// If this is a re-run on an existing episode dir,
+				// reuse the previously-logged topic so cache hits
+				// further down the pipeline don't waste an LLM call
+				// re-generating against a different topic.
+				if existing, err := os.ReadFile(layout.EpisodeFile(n, "topic.txt")); err == nil {
+					topic = strings.TrimSpace(string(existing))
+				}
+			}
 			if topic == "" {
 				topic, err = episode.PickTopic(layout, 12)
 				if err != nil {

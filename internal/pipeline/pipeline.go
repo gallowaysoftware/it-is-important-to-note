@@ -136,7 +136,7 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 	//      written by whichever cast stage handled each host. ----
 
 	mixScript := p.Render("compose_mix_script").
-		After(ariaAudio, atlasAudio, disclaimerAudio).
+		After(showrunner, ariaAudio, atlasAudio, disclaimerAudio).
 		Prompt(`{{ $script := parseJSON .stages.showrunner.output -}}
 {"voice_segments": [
 {{- range $i, $seg := index $script "segments" -}}
