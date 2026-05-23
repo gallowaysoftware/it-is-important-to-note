@@ -11,7 +11,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -51,6 +53,7 @@ func nextCommand() *cobra.Command {
 	var (
 		explicitTopic string
 		explicitNum   int
+		publishTo     string
 	)
 	cmd := &cobra.Command{
 		Use:   "next",
@@ -109,13 +112,70 @@ func nextCommand() *cobra.Command {
 			if err := episode.LogTopic(layout, n, topic); err != nil {
 				return fmt.Errorf("log topic: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "\n✓ episode %d done: %s\n", n, layout.EpisodeFile(n, "episode.m4b"))
+			localM4B := layout.EpisodeFile(n, "episode.m4b")
+			fmt.Fprintf(cmd.OutOrStdout(), "\n✓ episode %d done: %s\n", n, localM4B)
+
+			// Optionally copy the episode into a podcast library
+			// path. Audiobookshelf's podcast scanner reads ID3/m4b
+			// metadata for episode number + title; the on-disk
+			// name still wants to lead with a 3-digit episode
+			// number so the per-show folder sorts.
+			if publishTo != "" {
+				name := fmt.Sprintf("%03d - %s.m4b", n, sanitiseFilename(topic))
+				dst := filepath.Join(publishTo, name)
+				if err := os.MkdirAll(publishTo, 0o755); err != nil {
+					return fmt.Errorf("mkdir publish dir: %w", err)
+				}
+				if err := copyFile(localM4B, dst); err != nil {
+					return fmt.Errorf("publish to %s: %w", dst, err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "  published: %s\n", dst)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&explicitTopic, "topic", "", "Override topic. Default: next from catalog (skipping recent 12).")
 	cmd.Flags().IntVar(&explicitNum, "episode", 0, "Override episode number. 0 = next pending.")
+	cmd.Flags().StringVar(&publishTo, "publish-to", "", "Directory to copy the finished episode.m4b into, renamed `NNN - <topic>.m4b`. Typical: /mnt/<podcast-library>/Its Important to Note/.")
 	return cmd
+}
+
+// sanitiseFilename strips characters that misbehave in podcast-app /
+// audiobookshelf scanners — colons, slashes, control characters,
+// trailing whitespace. Keeps spaces + hyphens since those scan fine.
+func sanitiseFilename(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|':
+			b.WriteRune('-')
+		case r < 0x20:
+			continue
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// copyFile streams src → dst with a 32KB buffer so a large m4b
+// doesn't load entirely into memory. Used by the --publish-to flag
+// to land each finished episode in the podcast library.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return nil
 }
 
 func listCommand() *cobra.Command {
