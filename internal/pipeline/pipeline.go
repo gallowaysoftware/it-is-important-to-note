@@ -22,7 +22,10 @@ type Config struct {
 //
 // Stages:
 //
-//	write_script (text)               → script.md
+//	news_search (webhook)             → news_raw.json (SearXNG /search results)
+//	format_news (render)              → news.md       (top headlines + snippets, markdown)
+//	write_script (text)               → script_draft.md
+//	edit_script (text)                → script.md     (revised, dribble cut)
 //	showrunner   (text, json)         → script.json
 //	aria_segments (render)            → aria.json    (filter host=aria)
 //	atlas_segments (render)           → atlas.json   (filter host=atlas)
@@ -34,7 +37,7 @@ type Config struct {
 //	mix_episode (mix)                 → episode.mp3
 func Build(cfg Config) (*vamp.Pipeline, error) {
 	p := vamp.New("iitn-episode").
-		Describe("Generate one episode of \"It's Important to Note\" — two AI hosts give confidently wrong advice on a single topic.")
+		Describe("Generate one episode of \"It's Important to Note\" — two AI hosts give confidently wrong advice on a single topic + react to today's news.")
 
 	p.Input("topic", vamp.Required(), vamp.WithDefault(cfg.Topic),
 		vamp.Describe("Today's topic (e.g. 'burnout', 'asking for a raise')."))
@@ -42,21 +45,67 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 	p.RequireService("kokoro-tts", "http://127.0.0.1:8880",
 		"Kokoro-FastAPI TTS — provides af_bella / am_adam / am_eric voices.",
 		"vibe profile activate tts_kokoro")
-	p.RequireGPUMemory("~30GB during write_script + showrunner")
+	p.RequireService("searxng", "http://127.0.0.1:14002",
+		"SearXNG — pulled for the News React segment.",
+		"docker compose -f ~/.config/vibe/compose/searxng/docker-compose.yaml up -d")
+	p.RequireGPUMemory("~30GB during write_script + edit_script + showrunner")
 	p.RequireDiskSpace("~10MB per episode")
 	p.CapabilityModel("long_form", vamp.ModelHint{
 		MinParams: "27B", MinContext: 131072,
 		SuggestedModel: "qwen3.6-27b-mtp-q6_k",
 	})
 
+	// ---- News fetch (no GPU, no cache — every episode reacts to
+	//      whatever SearXNG returns at run time) ----
+
+	newsSearch := p.Webhook("news_search").
+		URL("http://127.0.0.1:14002/search?q=today+news&format=json").
+		Method("GET").
+		Output("news_raw.json")
+
+	formatNews := p.Render("format_news").
+		After(newsSearch).
+		Prompt(`{{ $raw := parseJSON .stages.news_search.output -}}
+{{ range $i, $r := (index $raw "results") -}}
+{{ if lt $i 12 -}}
+- **{{ index $r "title" }}** — {{ index $r "content" }}
+{{ end -}}
+{{ end -}}`).
+		Output("news.md")
+
 	// ---- LLM stages ----
 
 	script := p.Text("write_script").
 		Capability("long_form").
+		After(formatNews).
 		PromptFS(PromptsFS, "script.md").
-		Output("script.md").
+		Output("script_draft.md").
 		Param("temperature", 0.85).
-		Param("max_tokens", 8192).
+		// 16384 because v2 targets ~1500-2500 spoken words across 8
+		// sections (cold open / sponsor A / news react / topic /
+		// sponsor B / listener mail / confidence / outro). The 8192
+		// v1 budget regularly truncated mid-disclaimer.
+		Param("max_tokens", 16384).
+		Retry(&vamp.RetryPolicy{
+			MaxAttempts:    3,
+			InitialBackoff: 5 * time.Second,
+			MaxBackoff:     30 * time.Second,
+			RetryOn:        []string{"transient"},
+		})
+
+	// Editor pass: revise the draft so the comedy lands. The user
+	// feedback that triggered this stage (2026-05-23): "sometimes
+	// it hits, sometimes it just reads as hallucinations. It's
+	// funny when it's deliberately a bit off, it's boring when it
+	// feels like it's just rambling." Temperature is low — this is
+	// editorial, not generative.
+	editScript := p.Text("edit_script").
+		Capability("long_form").
+		After(script).
+		PromptFS(PromptsFS, "editor.md").
+		Output("script.md").
+		Param("temperature", 0.35).
+		Param("max_tokens", 16384).
 		Retry(&vamp.RetryPolicy{
 			MaxAttempts:    3,
 			InitialBackoff: 5 * time.Second,
@@ -66,7 +115,7 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 
 	showrunner := p.Text("showrunner").
 		Capability("long_form").
-		After(script).
+		After(editScript).
 		PromptFS(PromptsFS, "showrunner.md").
 		OutputFormatJSON().
 		Output("script.json").

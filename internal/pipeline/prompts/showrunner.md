@@ -7,7 +7,7 @@ the line calls for them.
 
 # Script
 
-{{ .stages.write_script.output }}
+{{ .stages.edit_script.output }}
 
 # Voice cast (fixed for this show)
 

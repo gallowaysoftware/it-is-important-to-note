@@ -132,109 +132,201 @@ func RecentTopics(l Layout, n int) ([]string, error) {
 	return out, nil
 }
 
-// TopicCatalog is the bank of topics the show rotates through.
-// Curated, not random — these are the genres of self-help slop the
-// show is mocking.
-var TopicCatalog = []string{
-	"asking for a raise at work",
-	"making new friends as an adult",
-	"recovering from burnout",
-	"saving money on groceries",
-	"early-stage relationship advice",
-	"dealing with difficult parents",
-	"impostor syndrome at a new job",
-	"how to have a difficult conversation",
-	"productivity systems for ADHD",
-	"meditation and mindfulness for beginners",
-	"raising teenagers in the smartphone era",
-	"breaking up with a long-term partner",
-	"dealing with grief and loss",
-	"managing anxiety in public speaking",
-	"investing your first thousand dollars",
-	"buying a house in this market",
-	"finding meaning in work that doesn't pay enough",
-	"setting boundaries with your in-laws",
-	"recovering from a major mistake at work",
-	"how to network without being weird about it",
-	"dating after a long relationship",
-	"managing a remote team for the first time",
-	"learning to cook as a grown adult",
-	"talking to a doctor when something feels off",
-	"resolving conflict with a roommate",
-	"sleeping better when your brain won't shut up",
-	"giving honest feedback without ruining a friendship",
-	"how to be less hard on yourself",
-	"deciding whether to quit your job",
-	"making it through the holidays with your family",
-	"choosing between two jobs that both have downsides",
-	"recovering from a public embarrassment",
-	"finding a therapist",
-	"forgiving someone who never apologized",
-	"explaining your weird career to your relatives",
-	"managing money in a relationship",
-	"how to ask for what you actually want",
-	"dealing with a passive-aggressive coworker",
-	"the proper way to apologize",
-	"becoming a morning person",
-	"saying no to social plans without guilt",
-	"reconnecting with an old friend",
-	"talking to your boss about your mental health",
-	"recovering from a bad financial decision",
-	"keeping a long-distance friendship alive",
-	"finding hobbies as a working adult",
-	"managing screen time in your own life",
-	"having the kid conversation with a partner",
-	"deciding to move to a new city",
-	"telling someone they have something in their teeth",
-	"adjusting after retirement",
-	"managing chronic pain that doctors can't explain",
+// Topic pairs a catalog entry's prompt text with a genre tag. The
+// picker uses the genre to keep recent episodes diverse — without
+// it the random-from-unused selector kept dropping 5 relationship
+// topics in the first 16 episodes (user feedback, 2026-05-23).
+type Topic struct {
+	Name  string
+	Genre string
 }
 
-// PickTopic chooses the next topic uniformly at random from those in
-// TopicCatalog that have never appeared in the topic log. Once every
-// topic has been used at least once, it picks uniformly at random from
-// the topics least recently used (those that appeared least often).
+// Topic genres. Tags are tuned for diversification, not perfect
+// taxonomy: "domestic" covers home life + family logistics, "world"
+// covers civic + outward-facing topics, "absurd" tags catalog
+// entries whose hook is already weird so we don't double up on them
+// in the same week.
+const (
+	GenreWork          = "work"
+	GenreMoney         = "money"
+	GenreRelationships = "relationships"
+	GenreWellness      = "wellness"
+	GenreDomestic      = "domestic"
+	GenreWorld         = "world"
+	GenreTech          = "tech"
+	GenreAbsurd        = "absurd"
+)
+
+// TopicCatalog is the bank of topics the show rotates through.
+// Curated, not random — these are the genres of self-help slop the
+// show is mocking. Each topic is genre-tagged so the picker can
+// downweight recently-seen genres and keep listenable rotation.
+var TopicCatalog = []Topic{
+	// work
+	{"asking for a raise at work", GenreWork},
+	{"impostor syndrome at a new job", GenreWork},
+	{"productivity systems for ADHD", GenreWork},
+	{"recovering from a major mistake at work", GenreWork},
+	{"how to network without being weird about it", GenreWork},
+	{"managing a remote team for the first time", GenreWork},
+	{"deciding whether to quit your job", GenreWork},
+	{"choosing between two jobs that both have downsides", GenreWork},
+	{"dealing with a passive-aggressive coworker", GenreWork},
+	{"talking to your boss about your mental health", GenreWork},
+	{"explaining your weird career to your relatives", GenreWork},
+	{"finding meaning in work that doesn't pay enough", GenreWork},
+
+	// money
+	{"saving money on groceries", GenreMoney},
+	{"investing your first thousand dollars", GenreMoney},
+	{"buying a house in this market", GenreMoney},
+	{"recovering from a bad financial decision", GenreMoney},
+	{"managing money in a relationship", GenreMoney},
+
+	// relationships (kept tagged so they don't cluster — user feedback)
+	{"early-stage relationship advice", GenreRelationships},
+	{"breaking up with a long-term partner", GenreRelationships},
+	{"dating after a long relationship", GenreRelationships},
+	{"how to ask for what you actually want", GenreRelationships},
+	{"the proper way to apologize", GenreRelationships},
+	{"forgiving someone who never apologized", GenreRelationships},
+	{"having the kid conversation with a partner", GenreRelationships},
+	{"giving honest feedback without ruining a friendship", GenreRelationships},
+	{"reconnecting with an old friend", GenreRelationships},
+	{"keeping a long-distance friendship alive", GenreRelationships},
+	{"making new friends as an adult", GenreRelationships},
+
+	// wellness
+	{"recovering from burnout", GenreWellness},
+	{"meditation and mindfulness for beginners", GenreWellness},
+	{"managing anxiety in public speaking", GenreWellness},
+	{"dealing with grief and loss", GenreWellness},
+	{"how to be less hard on yourself", GenreWellness},
+	{"becoming a morning person", GenreWellness},
+	{"sleeping better when your brain won't shut up", GenreWellness},
+	{"managing chronic pain that doctors can't explain", GenreWellness},
+	{"finding a therapist", GenreWellness},
+	{"talking to a doctor when something feels off", GenreWellness},
+	{"finding hobbies as a working adult", GenreWellness},
+
+	// domestic
+	{"dealing with difficult parents", GenreDomestic},
+	{"raising teenagers in the smartphone era", GenreDomestic},
+	{"setting boundaries with your in-laws", GenreDomestic},
+	{"making it through the holidays with your family", GenreDomestic},
+	{"learning to cook as a grown adult", GenreDomestic},
+	{"resolving conflict with a roommate", GenreDomestic},
+	{"adjusting after retirement", GenreDomestic},
+	{"deciding to move to a new city", GenreDomestic},
+
+	// tech
+	{"managing screen time in your own life", GenreTech},
+	{"how to have a difficult conversation", GenreTech}, // tagged tech because the bots will frame it as protocol design
+	{"telling someone they have something in their teeth", GenreAbsurd},
+	{"recovering from a public embarrassment", GenreAbsurd},
+	{"saying no to social plans without guilt", GenreRelationships},
+}
+
+// recentGenreWindow is the number of most-recent episodes whose
+// genres get downweighted when picking a fresh topic. Set to 3 so
+// runs of two are tolerated (relationship → wellness → relationship)
+// but runs of three+ are actively discouraged.
+const recentGenreWindow = 3
+
+// recentGenrePenalty is the multiplicative weight applied to a topic
+// whose genre appears in the last recentGenreWindow episodes. 0.2 is
+// strong enough to push the picker toward other genres without
+// hard-banning a genre when the catalog has run thin.
+const recentGenrePenalty = 0.2
+
+// PickTopic chooses the next topic with two-level diversification:
 //
-// Earlier versions used a fixed cooldown window over `RecentTopics`,
-// which let a topic recycle after N episodes — and because the LLM
-// stages are content-addressed by rendered prompt, a repeat topic
-// produced a verbatim cache replay of the prior episode's script. The
-// LRU-over-history picker keeps every script fresh until the catalog
-// is exhausted; the `cooldown` arg is retained for API stability but
-// ignored. Pass 0 if you need to signal "no preference."
+//  1. Topics that have never appeared in the log are preferred. Once
+//     all topics have been used at least once, the least-used set is
+//     the candidate pool instead.
+//  2. Within the candidate pool, each topic's selection weight is
+//     downweighted by `recentGenrePenalty` for every appearance of
+//     its genre in the last `recentGenreWindow` episodes. This keeps
+//     genres from clustering (the v1 picker dropped 5 relationship
+//     topics in the first 16 episodes — user feedback, 2026-05-23).
+//
+// The `cooldown` arg is retained for API stability but ignored — the
+// genre penalty subsumes its role.
 func PickTopic(l Layout, _ int) (string, error) {
 	used, err := topicUseCounts(l)
 	if err != nil {
 		return "", err
 	}
-	// First pass: any topic with zero uses is fair game; pick one
-	// uniformly at random so the order doesn't reveal the catalog's
-	// declaration order to a listener binge-watching the feed.
-	var unused []string
-	for _, t := range TopicCatalog {
-		if used[t] == 0 {
-			unused = append(unused, t)
-		}
+	recentGenres, err := recentGenreCounts(l, recentGenreWindow)
+	if err != nil {
+		return "", err
 	}
-	if len(unused) > 0 {
-		return unused[rand.Intn(len(unused))], nil
-	}
-	// All topics used at least once. Pick uniformly at random from the
-	// set with the minimum use count so the rotation re-cycles in a
-	// fresh order rather than catalog order.
+
+	// Build the candidate pool: topics with the minimum use count.
+	// On a fresh install everything has count 0; once the catalog is
+	// exhausted, the pool becomes the least-recently-cycled set.
 	minUses := -1
 	for _, t := range TopicCatalog {
-		if minUses == -1 || used[t] < minUses {
-			minUses = used[t]
+		if minUses == -1 || used[t.Name] < minUses {
+			minUses = used[t.Name]
 		}
 	}
-	var leastUsed []string
+	var pool []Topic
 	for _, t := range TopicCatalog {
-		if used[t] == minUses {
-			leastUsed = append(leastUsed, t)
+		if used[t.Name] == minUses {
+			pool = append(pool, t)
 		}
 	}
-	return leastUsed[rand.Intn(len(leastUsed))], nil
+	if len(pool) == 0 {
+		return "", fmt.Errorf("PickTopic: empty candidate pool (catalog has %d topics)", len(TopicCatalog))
+	}
+
+	// Compute weights for each candidate. Base weight is 1.0; each
+	// time the topic's genre appeared in the recent window the weight
+	// is multiplied by recentGenrePenalty. So a topic whose genre is
+	// in the recent window twice ends up at 0.04 relative weight.
+	weights := make([]float64, len(pool))
+	totalWeight := 0.0
+	for i, t := range pool {
+		w := 1.0
+		for n := 0; n < recentGenres[t.Genre]; n++ {
+			w *= recentGenrePenalty
+		}
+		weights[i] = w
+		totalWeight += w
+	}
+
+	// Weighted random pick.
+	r := rand.Float64() * totalWeight
+	for i, w := range weights {
+		r -= w
+		if r <= 0 {
+			return pool[i].Name, nil
+		}
+	}
+	// Numeric rounding fallback.
+	return pool[len(pool)-1].Name, nil
+}
+
+// recentGenreCounts returns the count of each genre in the last `n`
+// log entries. Used by PickTopic to downweight recently-clustered
+// genres. Empty log → empty map.
+func recentGenreCounts(l Layout, n int) (map[string]int, error) {
+	recent, err := RecentTopics(l, n)
+	if err != nil {
+		return nil, err
+	}
+	byName := make(map[string]string, len(TopicCatalog))
+	for _, t := range TopicCatalog {
+		byName[t.Name] = t.Genre
+	}
+	counts := map[string]int{}
+	for _, name := range recent {
+		if g, ok := byName[name]; ok {
+			counts[g]++
+		}
+	}
+	return counts, nil
 }
 
 // topicUseCounts returns the count of times each topic appears in the
