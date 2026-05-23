@@ -6,6 +6,7 @@ package episode
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -189,22 +190,72 @@ var TopicCatalog = []string{
 	"managing chronic pain that doctors can't explain",
 }
 
-// PickTopic chooses the next topic. Skips any of the last `cooldown`
-// topics so the rotation feels fresh.
-func PickTopic(l Layout, cooldown int) (string, error) {
-	recent, err := RecentTopics(l, cooldown)
+// PickTopic chooses the next topic uniformly at random from those in
+// TopicCatalog that have never appeared in the topic log. Once every
+// topic has been used at least once, it picks uniformly at random from
+// the topics least recently used (those that appeared least often).
+//
+// Earlier versions used a fixed cooldown window over `RecentTopics`,
+// which let a topic recycle after N episodes — and because the LLM
+// stages are content-addressed by rendered prompt, a repeat topic
+// produced a verbatim cache replay of the prior episode's script. The
+// LRU-over-history picker keeps every script fresh until the catalog
+// is exhausted; the `cooldown` arg is retained for API stability but
+// ignored. Pass 0 if you need to signal "no preference."
+func PickTopic(l Layout, _ int) (string, error) {
+	used, err := topicUseCounts(l)
 	if err != nil {
 		return "", err
 	}
-	seen := map[string]bool{}
-	for _, t := range recent {
-		seen[t] = true
-	}
+	// First pass: any topic with zero uses is fair game; pick one
+	// uniformly at random so the order doesn't reveal the catalog's
+	// declaration order to a listener binge-watching the feed.
+	var unused []string
 	for _, t := range TopicCatalog {
-		if !seen[t] {
-			return t, nil
+		if used[t] == 0 {
+			unused = append(unused, t)
 		}
 	}
-	// All topics in cooldown; fall back to the first.
-	return TopicCatalog[0], nil
+	if len(unused) > 0 {
+		return unused[rand.Intn(len(unused))], nil
+	}
+	// All topics used at least once. Pick uniformly at random from the
+	// set with the minimum use count so the rotation re-cycles in a
+	// fresh order rather than catalog order.
+	minUses := -1
+	for _, t := range TopicCatalog {
+		if minUses == -1 || used[t] < minUses {
+			minUses = used[t]
+		}
+	}
+	var leastUsed []string
+	for _, t := range TopicCatalog {
+		if used[t] == minUses {
+			leastUsed = append(leastUsed, t)
+		}
+	}
+	return leastUsed[rand.Intn(len(leastUsed))], nil
+}
+
+// topicUseCounts returns the count of times each topic appears in the
+// topic log. Returns an empty map if the log doesn't exist yet — the
+// caller treats the absent map as "every topic has zero uses," which
+// is the desired semantics for a fresh series.
+func topicUseCounts(l Layout) (map[string]int, error) {
+	raw, err := os.ReadFile(l.TopicLog())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]int{}, nil
+		}
+		return nil, err
+	}
+	counts := map[string]int{}
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		parts := strings.SplitN(line, "\t", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		counts[parts[1]]++
+	}
+	return counts, nil
 }
