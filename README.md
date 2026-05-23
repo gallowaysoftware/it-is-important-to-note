@@ -28,17 +28,25 @@ All three are Kokoro voices. No voice cloning needed for v1 — the show's bit i
 ```bash
 go install github.com/gallowaysoftware/it-is-important-to-note/cmd/iitn@latest
 
-# generate the next episode (auto-picks the next unused topic)
+# Bring up everything the pipeline needs (searxng + tts_kokoro + comfyui + long_form).
+# Reads the pipeline's RequireService / RequireProfile declarations and starts each
+# via vibe in one shot. --skip-active if the GPU is busy and you just want the sidecars.
+iitn activate
+
+# Generate the next episode (auto-picks an unused topic).
 iitn next
 
-# or pick the topic yourself
+# Check what's running, what's missing.
+iitn doctor
+
+# Pick a topic yourself.
 iitn next --topic "how to apologize properly"
 
-# list episodes generated
+# List + replay.
 iitn list
 ```
 
-Episodes land at `~/.local/state/iitn/episodes/NNN/episode.mp3`.
+Episodes land at `~/.local/state/iitn/episodes/NNN/episode.m4b`.
 
 ## Architecture
 
