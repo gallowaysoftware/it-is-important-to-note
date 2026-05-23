@@ -30,7 +30,7 @@ func DefaultRoot() string {
 //	$root/episodes/NNN/topic.txt        — the topic that seeded this ep
 //	$root/episodes/NNN/script.md        — final script
 //	$root/episodes/NNN/script.json      — showrunner output
-//	$root/episodes/NNN/episode.mp3      — final mix
+//	$root/episodes/NNN/episode.m4b      — final mix
 //	$root/topic_log.txt                 — append-only history of topics used (1 per line)
 //	$root/feed.xml                      — generated RSS feed
 type Layout struct {
@@ -55,7 +55,7 @@ func (l Layout) EpisodeFile(n int, name string) string {
 	return filepath.Join(l.EpisodeDir(n), name)
 }
 
-// CompletedEpisodes lists episode numbers with a finished episode.mp3.
+// CompletedEpisodes lists episode numbers with a finished episode.m4b.
 func CompletedEpisodes(l Layout) ([]int, error) {
 	entries, err := os.ReadDir(l.EpisodesDir())
 	if err != nil {
@@ -73,7 +73,7 @@ func CompletedEpisodes(l Layout) ([]int, error) {
 		if _, err := fmt.Sscanf(e.Name(), "%d", &n); err != nil {
 			continue
 		}
-		if _, err := os.Stat(l.EpisodeFile(n, "episode.mp3")); err == nil {
+		if _, err := os.Stat(l.EpisodeFile(n, "episode.m4b")); err == nil {
 			out = append(out, n)
 		}
 	}
@@ -82,7 +82,7 @@ func CompletedEpisodes(l Layout) ([]int, error) {
 }
 
 // NextEpisode returns the smallest 1-indexed number without a
-// completed episode.mp3.
+// completed episode.m4b.
 func NextEpisode(l Layout) (int, error) {
 	done, err := CompletedEpisodes(l)
 	if err != nil {

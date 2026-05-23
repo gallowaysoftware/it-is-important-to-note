@@ -109,7 +109,7 @@ func nextCommand() *cobra.Command {
 			if err := episode.LogTopic(layout, n, topic); err != nil {
 				return fmt.Errorf("log topic: %w", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "\n✓ episode %d done: %s\n", n, layout.EpisodeFile(n, "episode.mp3"))
+			fmt.Fprintf(cmd.OutOrStdout(), "\n✓ episode %d done: %s\n", n, layout.EpisodeFile(n, "episode.m4b"))
 			return nil
 		},
 	}
