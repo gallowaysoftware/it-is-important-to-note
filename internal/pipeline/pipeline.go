@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/gallowaysoftware/vibe/vamp"
@@ -41,6 +42,8 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 
 	p.Input("topic", vamp.Required(), vamp.WithDefault(cfg.Topic),
 		vamp.Describe("Today's topic (e.g. 'burnout', 'asking for a raise')."))
+	p.Input("episode_number", vamp.WithDefault(fmt.Sprintf("%d", cfg.EpisodeNumber)),
+		vamp.Describe("1-indexed episode number; baked into m4b metadata for podcast scanners."))
 
 	p.RequireService("kokoro-tts", "http://127.0.0.1:8880",
 		"Kokoro-FastAPI TTS — provides af_bella / am_adam / am_eric voices.",
@@ -246,6 +249,14 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 		ScriptFile("mix_script.json").
 		CoverImage("cover.png").
 		LoudnessTarget(-16).
+		// Container tags that Audiobookshelf / Plex / Apple Books
+		// surface in their podcast UIs. Track number is zero-padded
+		// so audiobookshelf's filename parser sorts naturally.
+		Metadata("title", "{{ .inputs.topic }}").
+		Metadata("album", "It's Important to Note").
+		Metadata("artist", "Aria & Atlas").
+		Metadata("genre", "Podcast").
+		Metadata("track", "{{ .inputs.episode_number }}").
 		Output("episode.m4b")
 
 	return p.Build()

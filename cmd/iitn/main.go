@@ -105,7 +105,11 @@ func nextCommand() *cobra.Command {
 				return err
 			}
 
-			root.SetArgs([]string{"run", "--run-dir", episodeDir, "--input", "topic=" + topic})
+			root.SetArgs([]string{
+				"run", "--run-dir", episodeDir,
+				"--input", "topic=" + topic,
+				"--input", fmt.Sprintf("episode_number=%d", n),
+			})
 			if err := root.Execute(); err != nil {
 				return fmt.Errorf("episode %d: %w", n, err)
 			}
