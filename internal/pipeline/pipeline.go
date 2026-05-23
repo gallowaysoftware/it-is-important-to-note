@@ -44,10 +44,10 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 
 	p.RequireService("kokoro-tts", "http://127.0.0.1:8880",
 		"Kokoro-FastAPI TTS — provides af_bella / am_adam / am_eric voices.",
-		"vibe profile activate tts_kokoro")
+		"vibe start tts_kokoro")
 	p.RequireService("searxng", "http://127.0.0.1:14002",
 		"SearXNG — pulled for the News React segment.",
-		"docker compose -f ~/.config/vibe/compose/searxng/docker-compose.yaml up -d")
+		"vibe start searxng")
 	p.RequireGPUMemory("~30GB during write_script + edit_script + showrunner")
 	p.RequireDiskSpace("~10MB per episode")
 	p.CapabilityModel("long_form", vamp.ModelHint{
