@@ -48,6 +48,7 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 	p.RequireService("searxng", "http://127.0.0.1:14002",
 		"SearXNG — pulled for the News React segment.",
 		"vibe start searxng")
+	p.RequireProfile("long_form")
 	p.RequireGPUMemory("~30GB during write_script + edit_script + showrunner")
 	p.RequireDiskSpace("~10MB per episode")
 	p.CapabilityModel("long_form", vamp.ModelHint{
