@@ -10,11 +10,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -42,6 +46,7 @@ can override with --topic).`,
 	}
 	root.AddCommand(nextCommand())
 	root.AddCommand(listCommand())
+	root.AddCommand(timingsCommand())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "iitn:", err)
@@ -206,4 +211,155 @@ func listCommand() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// pipelineTiming mirrors the JSON shape vamp writes to
+// pipeline_timing.json after each run. Only the fields the timings
+// subcommand needs are decoded; the rest is silently dropped.
+type pipelineTiming struct {
+	StartedAt time.Time           `json:"started_at"`
+	TotalMS   int64               `json:"total_ms"`
+	Stages    []pipelineStageTime `json:"stages"`
+}
+
+type pipelineStageTime struct {
+	ID         string         `json:"id"`
+	Type       string         `json:"type"`
+	DurationMS int64          `json:"duration_ms"`
+	Status     string         `json:"status"`
+	Notes      map[string]any `json:"notes"`
+}
+
+// timingsCommand prints a per-episode wall-clock table. Useful for
+// comparing run-to-run speed across profile / backend changes (e.g.
+// EXL3 vs GGUF, write_script duration delta after an MTP draft swap).
+func timingsCommand() *cobra.Command {
+	var (
+		showStages bool
+		filterID   string
+	)
+	cmd := &cobra.Command{
+		Use:   "timings",
+		Short: "Show per-episode wall-clock timings parsed from pipeline_timing.json.",
+		Long: `timings reads pipeline_timing.json from every published episode and
+prints a table of total + LLM-stage durations. With --stages, also
+breaks out the slowest stage per episode. With --stage <id>, prints
+only that stage's duration column.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			layout, err := episode.Open()
+			if err != nil {
+				return err
+			}
+			done, err := episode.CompletedEpisodes(layout)
+			if err != nil {
+				return err
+			}
+			if len(done) == 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "no episodes yet — `iitn next` to generate one")
+				return nil
+			}
+			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+			defer w.Flush()
+			if filterID != "" {
+				fmt.Fprintf(w, "ep\ttopic\t%s\n", filterID)
+			} else if showStages {
+				fmt.Fprintln(w, "ep\ttopic\ttotal\tslowest")
+			} else {
+				fmt.Fprintln(w, "ep\ttopic\ttotal")
+			}
+			for _, n := range done {
+				topic, _ := os.ReadFile(layout.EpisodeFile(n, "topic.txt"))
+				topicStr := strings.TrimSpace(string(topic))
+				timing, err := readTiming(layout.EpisodeFile(n, "pipeline_timing.json"))
+				if err != nil {
+					// Missing pipeline_timing.json is normal for very old
+					// runs from before vamp recorded timing. Skip with a
+					// dash rather than erroring the whole table.
+					fmt.Fprintf(w, "%03d\t%s\t-\n", n, topicStr)
+					continue
+				}
+				total := time.Duration(timing.TotalMS) * time.Millisecond
+				if filterID != "" {
+					d := stageDuration(timing, filterID)
+					if d < 0 {
+						fmt.Fprintf(w, "%03d\t%s\t-\n", n, topicStr)
+						continue
+					}
+					fmt.Fprintf(w, "%03d\t%s\t%s\n", n, topicStr, fmtDuration(d))
+					continue
+				}
+				if showStages {
+					slow := slowestStage(timing)
+					if slow == "" {
+						fmt.Fprintf(w, "%03d\t%s\t%s\t-\n", n, topicStr, fmtDuration(total))
+					} else {
+						fmt.Fprintf(w, "%03d\t%s\t%s\t%s\n", n, topicStr, fmtDuration(total), slow)
+					}
+					continue
+				}
+				fmt.Fprintf(w, "%03d\t%s\t%s\n", n, topicStr, fmtDuration(total))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&showStages, "stages", false, "Also surface each episode's slowest stage (id + duration).")
+	cmd.Flags().StringVar(&filterID, "stage", "", "Show only this stage's duration column instead of the total + slowest.")
+	return cmd
+}
+
+func readTiming(path string) (*pipelineTiming, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var t pipelineTiming
+	if err := json.Unmarshal(b, &t); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return &t, nil
+}
+
+// stageDuration returns the stage's duration in time.Duration units, or
+// -1 when no stage with that id was recorded for the episode (e.g. an
+// older pipeline version without the stage).
+func stageDuration(t *pipelineTiming, id string) time.Duration {
+	for i := range t.Stages {
+		if t.Stages[i].ID == id {
+			return time.Duration(t.Stages[i].DurationMS) * time.Millisecond
+		}
+	}
+	return -1
+}
+
+// slowestStage returns a "<id> <duration>" string for the longest non-
+// foreach stage in the timing record. Foreach parents typically
+// dominate via fan-out aggregation, which dwarfs single-call LLM stages
+// and makes the column boring; skip them in favour of the genuine
+// bottleneck.
+func slowestStage(t *pipelineTiming) string {
+	sorted := make([]pipelineStageTime, len(t.Stages))
+	copy(sorted, t.Stages)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].DurationMS > sorted[j].DurationMS
+	})
+	for _, s := range sorted {
+		// Skip the umbrella audio/foreach stages whose duration sums up
+		// the fan-out items — they're not "a stage" the operator can
+		// optimize.
+		if s.Type == "audio" {
+			continue
+		}
+		return fmt.Sprintf("%s %s", s.ID, fmtDuration(time.Duration(s.DurationMS)*time.Millisecond))
+	}
+	return ""
+}
+
+// fmtDuration renders a duration as a compact "1m23s" string, dropping
+// sub-second precision when the duration is over a minute (the timings
+// table is for at-a-glance comparison, not benchmark reporting).
+func fmtDuration(d time.Duration) string {
+	if d >= time.Minute {
+		return d.Round(time.Second).String()
+	}
+	return d.Round(100 * time.Millisecond).String()
 }
