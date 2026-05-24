@@ -220,6 +220,11 @@ type pipelineTiming struct {
 	StartedAt time.Time           `json:"started_at"`
 	TotalMS   int64               `json:"total_ms"`
 	Stages    []pipelineStageTime `json:"stages"`
+	// Capabilities is the per-capability profile resolution for the run
+	// — vibe v0.6.0+ records this. Older runs (or runs against a vamp
+	// without the field) decode to nil and the "profile" column reads
+	// as "-".
+	Capabilities map[string]string `json:"capabilities,omitempty"`
 }
 
 type pipelineStageTime struct {
@@ -263,9 +268,9 @@ only that stage's duration column.`,
 			if filterID != "" {
 				fmt.Fprintf(w, "ep\ttopic\t%s\n", filterID)
 			} else if showStages {
-				fmt.Fprintln(w, "ep\ttopic\ttotal\tslowest")
+				fmt.Fprintln(w, "ep\ttopic\ttotal\tprofile\tslowest")
 			} else {
-				fmt.Fprintln(w, "ep\ttopic\ttotal")
+				fmt.Fprintln(w, "ep\ttopic\ttotal\tprofile")
 			}
 			for _, n := range done {
 				topic, _ := os.ReadFile(layout.EpisodeFile(n, "topic.txt"))
@@ -288,16 +293,20 @@ only that stage's duration column.`,
 					fmt.Fprintf(w, "%03d\t%s\t%s\n", n, topicStr, fmtDuration(d))
 					continue
 				}
+				profile := timing.Capabilities["long_form"]
+				if profile == "" {
+					profile = "-"
+				}
 				if showStages {
 					slow := slowestStage(timing)
 					if slow == "" {
-						fmt.Fprintf(w, "%03d\t%s\t%s\t-\n", n, topicStr, fmtDuration(total))
+						fmt.Fprintf(w, "%03d\t%s\t%s\t%s\t-\n", n, topicStr, fmtDuration(total), profile)
 					} else {
-						fmt.Fprintf(w, "%03d\t%s\t%s\t%s\n", n, topicStr, fmtDuration(total), slow)
+						fmt.Fprintf(w, "%03d\t%s\t%s\t%s\t%s\n", n, topicStr, fmtDuration(total), profile, slow)
 					}
 					continue
 				}
-				fmt.Fprintf(w, "%03d\t%s\t%s\n", n, topicStr, fmtDuration(total))
+				fmt.Fprintf(w, "%03d\t%s\t%s\t%s\n", n, topicStr, fmtDuration(total), profile)
 			}
 			return nil
 		},
