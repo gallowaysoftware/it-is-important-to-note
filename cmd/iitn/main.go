@@ -242,6 +242,7 @@ func timingsCommand() *cobra.Command {
 	var (
 		showStages bool
 		filterID   string
+		summary    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "timings",
@@ -249,7 +250,8 @@ func timingsCommand() *cobra.Command {
 		Long: `timings reads pipeline_timing.json from every published episode and
 prints a table of total + LLM-stage durations. With --stages, also
 breaks out the slowest stage per episode. With --stage <id>, prints
-only that stage's duration column.`,
+only that stage's duration column. With --summary, groups episodes
+by long_form profile and reports count + mean + p50 + p90 totals.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			layout, err := episode.Open()
 			if err != nil {
@@ -262,6 +264,9 @@ only that stage's duration column.`,
 			if len(done) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "no episodes yet — `iitn next` to generate one")
 				return nil
+			}
+			if summary {
+				return printTimingsSummary(cmd.OutOrStdout(), layout, done)
 			}
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			defer w.Flush()
@@ -313,7 +318,106 @@ only that stage's duration column.`,
 	}
 	cmd.Flags().BoolVar(&showStages, "stages", false, "Also surface each episode's slowest stage (id + duration).")
 	cmd.Flags().StringVar(&filterID, "stage", "", "Show only this stage's duration column instead of the total + slowest.")
+	cmd.Flags().BoolVar(&summary, "summary", false, "Group episodes by long_form profile and report count + mean + p50 + p90 totals. Episodes whose pipeline_timing.json predates vibe v0.6.1 (no profile recorded) are grouped under \"(unknown)\".")
 	return cmd
+}
+
+// printTimingsSummary groups every recorded episode by its long_form
+// profile and prints aggregate totals (count, mean, median, p90).
+// Useful for "how much faster is EXL3 than GGUF on this workload"
+// without eyeballing the per-episode table.
+func printTimingsSummary(out io.Writer, layout episode.Layout, episodes []int) error {
+	type bucket struct {
+		durations []time.Duration
+	}
+	groups := map[string]*bucket{}
+	for _, n := range episodes {
+		timing, err := readTiming(layout.EpisodeFile(n, "pipeline_timing.json"))
+		if err != nil {
+			continue
+		}
+		profile := timing.Capabilities["long_form"]
+		if profile == "" {
+			profile = "(unknown)"
+		}
+		b, ok := groups[profile]
+		if !ok {
+			b = &bucket{}
+			groups[profile] = b
+		}
+		b.durations = append(b.durations, time.Duration(timing.TotalMS)*time.Millisecond)
+	}
+	if len(groups) == 0 {
+		fmt.Fprintln(out, "no episodes with timing data")
+		return nil
+	}
+	// Stable ordering: by name, "(unknown)" last so the meaningful
+	// rows lead.
+	names := make([]string, 0, len(groups))
+	for name := range groups {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if names[i] == "(unknown)" {
+			return false
+		}
+		if names[j] == "(unknown)" {
+			return true
+		}
+		return names[i] < names[j]
+	})
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	defer w.Flush()
+	fmt.Fprintln(w, "profile\tn\tmean\tp50\tp90")
+	for _, name := range names {
+		ds := groups[name].durations
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\n", name, len(ds),
+			fmtDuration(meanDuration(ds)),
+			fmtDuration(percentileDuration(ds, 0.50)),
+			fmtDuration(percentileDuration(ds, 0.90)))
+	}
+	return nil
+}
+
+// meanDuration returns the arithmetic mean of a slice of durations.
+// Empty input returns zero so the caller can render "-" without an
+// extra branch.
+func meanDuration(ds []time.Duration) time.Duration {
+	if len(ds) == 0 {
+		return 0
+	}
+	var sum time.Duration
+	for _, d := range ds {
+		sum += d
+	}
+	return sum / time.Duration(len(ds))
+}
+
+// percentileDuration returns the linear-interpolated p-th percentile
+// (p in [0,1]) of ds. Empty input returns zero; for small n the
+// "linear-interpolated" branch is mostly the upper bound, which is
+// fine for the table — we're not running statistics, just summarising.
+func percentileDuration(ds []time.Duration, p float64) time.Duration {
+	if len(ds) == 0 {
+		return 0
+	}
+	sorted := make([]time.Duration, len(ds))
+	copy(sorted, ds)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	if p <= 0 {
+		return sorted[0]
+	}
+	if p >= 1 {
+		return sorted[len(sorted)-1]
+	}
+	idx := p * float64(len(sorted)-1)
+	low := int(idx)
+	high := low + 1
+	if high >= len(sorted) {
+		return sorted[low]
+	}
+	frac := idx - float64(low)
+	return sorted[low] + time.Duration(float64(sorted[high]-sorted[low])*frac)
 }
 
 func readTiming(path string) (*pipelineTiming, error) {
