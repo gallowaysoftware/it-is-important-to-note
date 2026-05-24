@@ -154,6 +154,12 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 		Parameter("4.text", "{{ .stages.compose_cover.output }}").
 		Parameter("6.width", "1024").
 		Parameter("6.height", "1024").
+		// Drop SDXL-Turbo's weights after the cover lands. Each episode
+		// generates exactly one cover, and leaving ComfyUI resident
+		// after the run blocks the next episode's long_form_exl3
+		// activation (5GB SDXL-Turbo + 28GB EXL3 weights > 32GB on a
+		// 5090). ~3-4s cold-start to reload next time is fine.
+		FreeMemoryAfter().
 		Output("cover.png")
 
 	showrunner := p.Text("showrunner").
