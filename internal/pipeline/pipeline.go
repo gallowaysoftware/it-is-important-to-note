@@ -164,6 +164,14 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 		Output("script.json").
 		Param("temperature", 0.3).
 		Param("max_tokens", 16384).
+		// chat_template_kwargs.enable_thinking=false: disables
+		// Qwen3's verbose chain-of-thought mode for this stage. On
+		// EXL3 + tabbyAPI the model otherwise emits "Here's a thinking
+		// process: ..." preamble that fills the entire max_tokens
+		// budget, leaving no room for the actual JSON output and
+		// failing the output_format: json gate. Harmless on llama-
+		// server / GGUF backends — unknown body fields are ignored.
+		Param("chat_template_kwargs", map[string]any{"enable_thinking": false}).
 		Retry(&vamp.RetryPolicy{
 			MaxAttempts:    3,
 			InitialBackoff: 5 * time.Second,
