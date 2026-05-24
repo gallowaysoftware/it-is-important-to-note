@@ -28,22 +28,27 @@ All three are Kokoro voices. No voice cloning needed for v1 — the show's bit i
 ```bash
 go install github.com/gallowaysoftware/it-is-important-to-note/cmd/iitn@latest
 
-# Bring up everything the pipeline needs (searxng + tts_kokoro + comfyui + long_form).
-# Reads the pipeline's RequireService / RequireProfile declarations and starts each
-# via vibe in one shot. --skip-active if the GPU is busy and you just want the sidecars.
-iitn activate
-
-# Generate the next episode (auto-picks an unused topic).
+# Generate the next episode (auto-picks an unused topic). The vamp run that
+# iitn drives auto-runs `vibe start searxng` + `vibe start tts_kokoro` for
+# any RequireService URL that isn't already up, so first run after a reboot
+# just works.
 iitn next
 
-# Check what's running, what's missing.
+# Or bring everything up explicitly first — handy when you want to verify
+# the stack is healthy before kicking off a long generation.
+iitn activate
 iitn doctor
 
 # Pick a topic yourself.
 iitn next --topic "how to apologize properly"
 
-# List + replay.
+# Episode list + per-episode topic.
 iitn list
+
+# Per-episode wall-clock timings (compare profile / backend speed across runs).
+iitn timings              # total per episode
+iitn timings --stages     # total + slowest stage per episode
+iitn timings --stage showrunner    # filter to one stage's column
 ```
 
 Episodes land at `~/.local/state/iitn/episodes/NNN/episode.m4b`.
@@ -51,17 +56,28 @@ Episodes land at `~/.local/state/iitn/episodes/NNN/episode.m4b`.
 ## Architecture
 
 ```
-write_script (LLM)        → script.md
-showrunner (LLM)          → script.json
+news_search (webhook)      → news_raw.json
+format_news (render)       → news.md
+write_script (LLM)         → script_draft.md
+edit_script (LLM)          → script.md           ┐
+compose_cover (LLM)        → cover_prompt.txt    │
+generate_cover (ComfyUI)   → cover.png           │ FreeMemoryAfter
+showrunner (LLM, JSON)     → script.json          ┘ (Qwen3 thinking off)
 aria_segments / atlas_segments / disclaimer_segments (renders)
    ↓        ↓        ↓
 cast_aria / cast_atlas / cast_disclaimer (Kokoro foreach)
    ↓
 compose_mix_script (render) → mix_script.json
-mix_episode (mix stage)     → episode.mp3
+mix_episode (mix stage)     → episode.m4b (chapterised, cover embedded)
 ```
 
-5 stages, ~2 min compute per episode. Easy to cron daily so a new episode lands in your podcast feed every morning.
+~15 stages. Wall-clock varies by profile:
+- **GGUF long_form (Qwen3.6-27B Q6_K)**: ~4–6 min per episode.
+- **EXL3 long_form_exl3 (Qwen3.6-27B 6.0bpw)**: comparable on showrunner
+  (CoT off) but ~2× slower on write_script + edit_script (CoT on).
+- **`fast` fallback**: ~40s, noticeably blander output.
+
+Use `iitn timings` to compare across episodes.
 
 ## Topic catalog
 
@@ -83,9 +99,11 @@ There isn't a great "curated AI-media platform" that isn't either a firehose or 
 
 | Component | State |
 |---|---|
-| Pipeline (5 stages) | wired end-to-end |
-| Prompts: script + showrunner | drafted, tone-tuned, awaiting first live read |
+| Pipeline (~15 stages, news react + cover art included) | wired end-to-end; 20+ episodes published |
+| Prompts: script + editor + showrunner + cover | drafted, tone-tuned, holding up across runs |
 | Topic catalog | 52 entries shipped |
+| EXL3 backend support | validated EP19 (Qwen3.6-27B 6.0bpw + tabbyAPI + enable_thinking=false on showrunner) |
+| ComfyUI VRAM hand-off | `FreeMemoryAfter` on generate_cover lets the next episode's LLM activation reclaim the slot |
 | RSS feed generation | TODO — straightforward, deferred until first episode lands |
 | Apple Podcasts submission | TODO — needs a public hosting URL |
 | Per-host voice routing (single audio stage) | v2 — needs templateable `Audio.Voice` |
