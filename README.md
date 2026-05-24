@@ -4,14 +4,16 @@ A satirical short-form podcast. Two AI hosts give confidently wrong life advice 
 
 Every voice tic is intentional: the em-dashes, the "Let's unpack this," the hallucinated citations to studies that don't exist, the helpful warmth applied to dark advice. The hosts know they are AIs and they are extremely excited about this.
 
-## Format (per episode, ~5-8 min)
+## Format (per episode, 10–15 min spoken, 1500–2500 words)
 
-1. **Cold open** — Aria opens; Atlas finishes the tagline with a fresh variant each time.
-2. **Listener mail** *(sometimes)* — Aria reads a fictional letter, also AI-generated, also questionable.
-3. **Today's sponsor** — fictional brand read with a promo code ("Use code IMPORTANT for 12% off").
-4. **The topic** — alternating dialogue, 3-4 sub-points, at least one hallucinated citation per host.
-5. **Confidence meter** — hosts rate their own advice. Always 9.7/10.
-6. **Outro + tiny disclaimer** — legal-disclaimer-style fast-talk by a separate voice at the end.
+1. **Cold open / theme stinger** (~40 words) — Aria opens with the same shape every episode (*"Welcome back to It's Important to Note, the podcast where two large language models —"*); Atlas finishes the tagline with a fresh variant each time.
+2. **Sponsor A — topical** (~80 words) — fictional brand *tonally adjacent to today's topic*; ad copy that starts reasonable and ends absurd. Ends `Use code IMPORTANT for 12% off.`
+3. **News React** (~250 words) — Aria reads two real headlines pulled from SearXNG at runtime; Atlas reacts *with the wrong energy* (flat-affect a tragedy, or care intensely about a triviality inside a serious story). At least one hallucinated follow-up "study."
+4. **Today's Topic** (~700–1000 words, the bulk) — 3–5 sub-points of confidently wrong advice. Mandatory beats: three hallucinated citations spread across the segment, at least one LLM-style self-disclosure, at least one joke that turns on a specifically LLM mechanism (prefix cache, token budget, embedding space, training cutoff…).
+5. **Sponsor B — non-sequitur** (~80 words) — second brand whose product is *completely unrelated* to the topic (a podcast about grief carrying an ad for industrial-grade silicone caulk). The contrast is the joke; hosts don't acknowledge the mismatch.
+6. **Listener Mail** (~120 words) — Aria reads a fictional letter from a named-and-located listener whose situation is tilted ~15° from reality. Bad advice ensues. Closes with *"Thanks for writing in, [name]."*
+7. **Confidence Meter** (~50 words) — both hosts rate their own advice. **Number varies per episode** (acceptable range 9.4–10.2); roughly every five episodes one host should call out the impossibility of the other's number.
+8. **Outro + Disclaimer** (~80 words) — sign-off, then a single fast-talk paragraph of legal-style over-qualification spoken at ~2× by a third Kokoro voice. Always ends *"Approximately none of what was said is true. Goodbye."*
 
 ## Voices
 
@@ -100,11 +102,11 @@ There isn't a great "curated AI-media platform" that isn't either a firehose or 
 
 | Component | State |
 |---|---|
-| Pipeline (~15 stages, news react + cover art included) | wired end-to-end; 20+ episodes published |
+| Pipeline (~15 stages, news react + cover art included) | wired end-to-end; 30 episodes published |
 | Prompts: script + editor + showrunner + cover | drafted, tone-tuned, holding up across runs |
 | Topic catalog | 52 entries shipped |
-| EXL3 backend support | validated EP19 (Qwen3.6-27B 6.0bpw + tabbyAPI + enable_thinking=false on showrunner) |
-| ComfyUI VRAM hand-off | `FreeMemoryAfter` on generate_cover lets the next episode's LLM activation reclaim the slot |
+| EXL3 backend support | validated EP19–EP30 (8 consecutive runs on long_form_exl3 + Qwen3.6-27B 6.0bpw + tabbyAPI; `enable_thinking=false` on showrunner keeps CoT off the JSON gate) |
+| ComfyUI VRAM hand-off | `FreeMemoryAfter` on generate_cover lets the next episode's LLM activation reclaim the slot — zero VRAM-fallback regressions across EP21–30 |
 | RSS feed generation | TODO — straightforward, deferred until first episode lands |
 | Apple Podcasts submission | TODO — needs a public hosting URL |
 | Per-host voice routing (single audio stage) | v2 — needs templateable `Audio.Voice` |
