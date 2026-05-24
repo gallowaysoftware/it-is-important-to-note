@@ -48,6 +48,7 @@ iitn list
 # Per-episode wall-clock timings (compare profile / backend speed across runs).
 iitn timings              # total per episode
 iitn timings --stages     # total + slowest stage per episode
+iitn timings --summary    # group by profile; mean / p50 / p90 totals
 iitn timings --stage showrunner    # filter to one stage's column
 ```
 
