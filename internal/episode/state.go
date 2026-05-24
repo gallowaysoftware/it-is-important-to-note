@@ -45,9 +45,9 @@ func Open() (Layout, error) {
 	return Layout{Root: root}, nil
 }
 
-func (l Layout) EpisodesDir() string  { return filepath.Join(l.Root, "episodes") }
-func (l Layout) TopicLog() string     { return filepath.Join(l.Root, "topic_log.txt") }
-func (l Layout) FeedFile() string     { return filepath.Join(l.Root, "feed.xml") }
+func (l Layout) EpisodesDir() string { return filepath.Join(l.Root, "episodes") }
+func (l Layout) TopicLog() string    { return filepath.Join(l.Root, "topic_log.txt") }
+func (l Layout) FeedFile() string    { return filepath.Join(l.Root, "feed.xml") }
 func (l Layout) EpisodeDir(n int) string {
 	return filepath.Join(l.EpisodesDir(), fmt.Sprintf("%03d", n))
 }

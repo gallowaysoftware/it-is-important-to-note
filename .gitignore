@@ -1,1 +1,16 @@
 /dist/
+*.test
+*.log
+*.pid
+*.sock
+
+# generated audio output — episodes land under $XDG_STATE_HOME/iitn/, not
+# in the source tree, but a stray export shouldn't get tracked.
+*.m4b
+*.mp3
+*.wav
+
+# editor / IDE
+.idea/
+.vscode/
+.DS_Store

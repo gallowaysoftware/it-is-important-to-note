@@ -185,7 +185,6 @@ func Build(cfg Config) (*vamp.Pipeline, error) {
 			RetryOn:        []string{"transient", "invalid_output"},
 		})
 
-
 	// ---- Split segments by host (audio stage's Voice is per-stage,
 	//      not per-iteration, so we run three audio stages — one per
 	//      voice — each foreaching only its own segments) ----

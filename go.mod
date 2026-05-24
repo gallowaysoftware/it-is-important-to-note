@@ -3,7 +3,7 @@ module github.com/gallowaysoftware/it-is-important-to-note
 go 1.26.3
 
 require (
-	github.com/gallowaysoftware/vibe v0.5.1
+	github.com/gallowaysoftware/vibe v0.6.0
 	github.com/spf13/cobra v1.10.2
 )
 
@@ -16,8 +16,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// Local development: pin to in-tree vibe checkout — depends on the
-// post-v0.5.1 mix stage type + filterByValue template helper. Drop
-// once vibe publishes a tag that includes them.
-replace github.com/gallowaysoftware/vibe => ../vibe
